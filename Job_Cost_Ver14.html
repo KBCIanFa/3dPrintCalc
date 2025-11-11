@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>3D Printing Cost Calculator + Quote (Full Rebuild v3)</title>
+  <style>
+    /* ---------- Base UI & Layout ---------- */
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;padding:0;background:linear-gradient(to bottom right,#eef2f3,#8e9eab);color:#111827}
+    .container{width:min(92vw,960px);margin:32px auto;padding:20px;border-radius:16px;background:#fff;box-shadow:0 8px 20px rgba(0,0,0,.08)}
+    h1{margin:0 0 12px;text-align:center;color:#0b74ff}
+    .sub{margin:-6px 0 18px;text-align:center;color:#6b7280}
+    label{font-weight:600;font-size:.95rem;color:#374151;display:block;margin:8px 0 6px}
+    input,select,textarea{width:100%;max-width:100%;min-width:0;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;font-size:1rem}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:#0b74ff;box-shadow:0 0 0 3px rgba(11,116,255,.15)}
+    textarea{min-height:70px;resize:vertical}
+    .section{margin:16px 0;padding:14px;border-left:4px solid #0b74ff;border-radius:10px;background:#f8fafc}
+    .section h2{margin:0 0 8px;font-size:1.05rem;color:#4b5563}
+    .grid{display:grid;gap:12px}
+    .cols-2{grid-template-columns:1fr 1fr}
+    .cols-3{grid-template-columns:repeat(3,1fr)}
+    @media (max-width:900px){.cols-2,.cols-3{grid-template-columns:1fr}}
+    .btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px}
+    @media (max-width:760px){.btns{grid-template-columns:1fr}}
+    button{padding:12px 14px;border:0;border-radius:12px;background:#0b74ff;color:#fff;font-weight:700;font-size:1.02rem;cursor:pointer}
+    button:hover{background:#075ed3}
+    .secondary{background:#0ea5e9}
+    .secondary:hover{background:#0b8ec7}
+    .muted{background:#6b7280}
+    .muted:hover{background:#565d65}
+    .result{margin-top:14px;padding:14px;border-radius:12px;background:#f7f9fa;box-shadow:0 4px 10px rgba(0,0,0,.06)}
+    .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px}
+    .t{font-size:.8rem;color:#6b7280}
+    .v{font-size:1.08rem;font-weight:700;margin-top:2px}
+    .warn{background:#fff4e5;border:1px solid #ffdca8;color:#8a5400;padding:8px;border-radius:8px;margin-bottom:8px}
+    .ok{background:#e8f7ef;border:1px solid #b7f0cf;color:#0a6a42;padding:8px;border-radius:8px;margin-bottom:8px}
+
+    /* ---------- Printable Quote ---------- */
+    #quoteDoc{display:none}
+    .quote-wrap{width:210mm;max-width:100%;margin:0 auto;background:#fff;color:#000;padding:22mm 18mm}
+    .q-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+    .q-brand h2{margin:0;color:#0b74ff}
+    .q-meta{font-size:.92rem;color:#374151}
+    .q-section{margin:14px 0}
+    .q-h3{margin:0 0 6px;color:#111827;font-size:1rem}
+    table.q-table{width:100%;border-collapse:collapse;margin-top:6px}
+    .q-table th,.q-table td{border:1px solid #e5e7eb;padding:8px;text-align:right}
+    .q-table th:first-child,.q-table td:first-child{text-align:left}
+    .q-table tfoot td{font-weight:700}
+    .q-notes{white-space:pre-wrap;border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fafafa}
+    .q-footer{margin-top:12px;font-size:.9rem;color:#374151}
+    .ver{margin-top:6px;text-align:center;color:#9ca3af;font-size:.85rem}
+    @media print{body{background:#fff}.container,.no-print{display:none !important}#quoteDoc{display:block}@page{size:A4;margin:12mm}}
+  </style>
+</head>
+<body>
+  <div class="container no-print">
+    <h1>3D Printing Cost Calculator</h1>
+    <div class="sub">Assumes <b>1 kg spools</b>. Calculate → build a customer-ready quote (print/PDF or download HTML). <b>v3</b></div>
+
+    <form id="calcForm" onsubmit="return false;">
+      <!-- PRINTER -->
+      <div class="section">
+        <h2>Printer</h2>
+        <div class="grid cols-2">
+          <div>
+            <label for="printer">Select Printer</label>
+            <select id="printer" required>
+              <option value="">— Select —</option>
+              <option value="H2S">Bambu Lab H2S (base ~$1.15/hr)</option>
+              <option value="A1">Bambu Lab A1 (base ~$0.80/hr)</option>
+              <option value="Custom">Custom…</option>
+            </select>
+          </div>
+          <div>
+            <label for="machineBase">Machine Base Cost / hr ($)</label>
+            <input id="machineBase" type="number" step="0.01" placeholder="Auto-filled"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILAMENT -->
+      <div class="section">
+        <h2>Filament</h2>
+        <div class="grid cols-3">
+          <div>
+            <label for="filamentType">Material</label>
+            <select id="filamentType" required onchange="toggleCustomDensity()">
+              <option value="PLA">PLA (1.24 g/cm³)</option>
+              <option value="ABS">ABS (1.04 g/cm³)</option>
+              <option value="PETG">PETG (1.27 g/cm³)</option>
+              <option value="Nylon">Nylon (1.52 g/cm³)</option>
+              <option value="TPU">TPU (1.21 g/cm³)</option>
+              <option value="PC">Polycarbonate (1.3 g/cm³)</option>
+              <option value="CarbonFiber">Carbon Fiber (1.3 g/cm³)</option>
+              <option value="ASA">ASA (1.05 g/cm³)</option>
+              <option value="Custom">Custom</option>
+            </select>
+          </div>
+          <div>
+            <label for="customDensity" id="customDensityLabel" style="display:none">Custom Density (g/cm³)</label>
+            <input id="customDensity" type="number" step="0.01" style="display:none" />
+          </div>
+          <div>
+            <label for="filamentDiameter">Diameter (mm)</label>
+            <input id="filamentDiameter" type="number" step="0.01" value="1.75" required />
+          </div>
+          <div>
+            <label for="filamentPrice">Price / kg ($)</label>
+            <input id="filamentPrice" type="number" step="0.01" required />
+          </div>
+        </div>
+      </div>
+
+      <!-- PRINT DETAILS -->
+      <div class="section">
+        <h2>Print Details</h2>
+        <div class="grid cols-3">
+          <div>
+            <label>Time Input Mode</label>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <label style="display:flex;gap:6px;align-items:center"><input type="radio" name="timeMode" value="perModel" checked> Per model</label>
+              <label style="display:flex;gap:6px;align-items:center"><input type="radio" name="timeMode" value="totalJob"> Total job</label>
+            </div>
+          </div>
+          <div>
+            <label for="printWeight">Part Weight (g)</label>
+            <input id="printWeight" type="number" step="0.1" required />
+          </div>
+          <div>
+            <label>Print Time <span id="timeModeTag" style="color:#6b7280">(per model)</span></label>
+            <div class="grid cols-2">
+              <input id="printTimeHours" type="number" placeholder="Hours" step="1" min="0" required />
+              <input id="printTimeMinutes" type="number" placeholder="Minutes" step="1" min="0" required />
+            </div>
+          </div>
+          <div>
+            <label for="numModels">Number of Models</label>
+            <input id="numModels" type="number" step="1" value="1" required />
+          </div>
+        </div>
+      </div>
+
+      <!-- PRICING & GUARDRAILS -->
+      <div class="section">
+        <h2>Pricing</h2>
+        <div class="grid cols-3">
+          <div>
+            <label for="markup">Markup (%)</label>
+            <input id="markup" type="number" step="0.1" value="0" />
+          </div>
+          <div>
+            <label for="sellHourly">Target Sell Rate / hr ($)</label>
+            <input id="sellHourly" type="number" step="0.1" placeholder="e.g. 15" />
+          </div>
+          <div>
+            <label style="display:flex;gap:8px;align-items:center;margin-top:28px">
+              <input type="checkbox" id="enforceMin" checked /> Enforce minimum hourly & $15/job
+            </label>
+          </div>
+        </div>
+        <div class="sub" style="margin-top:6px">Guidance: Standard materials $12–15/hr, Engineering/high-temp $15–18/hr (auto-enforced when checked).</div>
+      </div>
+
+      <!-- QUOTE DETAILS -->
+      <div class="section">
+        <h2>Quote Details</h2>
+        <div class="grid cols-2">
+          <div>
+            <label for="custName">Customer Name</label>
+            <input id="custName" type="text" placeholder="e.g. John Citizen" />
+          </div>
+          <div>
+            <label for="custEmail">Customer Email</label>
+            <input id="custEmail" type="email" placeholder="e.g. john@example.com" />
+          </div>
+          <div>
+            <label for="project">Project / Item</label>
+            <input id="project" type="text" placeholder="e.g. ABS prototype brackets" />
+          </div>
+          <div>
+            <label for="validDays">Quote Valid (days)</label>
+            <input id="validDays" type="number" value="14" />
+          </div>
+        </div>
+        <div class="grid cols-2">
+          <div>
+            <label for="bizName">Business Name</label>
+            <input id="bizName" type="text" placeholder="e.g. Your Business" />
+          </div>
+          <div>
+            <label for="abn">ABN</label>
+            <input id="abn" type="text" placeholder="e.g. 12 345 678 901" />
+          </div>
+        </div>
+        <div class="grid cols-2">
+          <div>
+            <label for="includeGST">GST</label>
+            <div style="display:flex;gap:8px;align-items:center"><input id="includeGST" type="checkbox" unchecked /> <span>GST Tax (10%)</span></div>
+          </div>
+          <div></div>
+        </div>
+        <label for="notes">Notes / Terms</label>
+        <textarea id="notes" placeholder="Lead times, reprint policy, pickup/delivery, payment terms, etc."></textarea>
+      </div>
+    </form>
+
+    <div class="btns">
+      <button type="button" id="btnCalc">Calculate</button>
+      <button type="button" class="secondary" id="btnQuote">Build Quote</button>
+      <button type="button" class="muted" id="btnPrint">Print / Save as PDF</button>
+      <button type="button" class="secondary" id="btnDownloadPdf">Download PDF</button>
+    </div>
+    <div class="btns" style="margin-top:8px">
+      <button type="button" id="btnDownloadHtml">Download Quote (.html)</button>
+      <button type="button" class="secondary" id="btnCopyEmail">Copy Quote Summary (email)</button>
+      <button type="button" class="muted" id="btnReset">Reset</button>
+    </div>
+
+    <div id="out" class="result" style="display:none"></div>
+    <div class="ver">Build v3 • will show current date/time on quote</div>
+  </div>
+
+  <!-- Printable Quote Document -->
+  <div id="quoteDoc"><div class="quote-wrap" id="quoteWrap"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script>
+// ---------- Reference data ----------
+const PRINTER_BASE = { H2S:1.15, A1:0.80 }; // Gladstone context base $/hr
+const DENSITIES = { PLA:1.24, ABS:1.04, PETG:1.27, Nylon:1.52, TPU:1.21, PC:1.3, CarbonFiber:1.3, ASA:1.05 };
+const ENGINEERING = new Set(['ABS','ASA','Nylon','PC','CarbonFiber','PETG']);
+const SPOOL_G = 1000; // 1 kg spools assumed
+
+const $ = id => document.getElementById(id);
+const fmt = n => Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+let lastCalc = null; // latest calc snapshot for quote
+
+function toggleCustomDensity(){
+  const isCustom = $('filamentType').value==='Custom';
+  $('customDensityLabel').style.display = isCustom?'block':'none';
+  $('customDensity').style.display = isCustom?'block':'none';
+}
+
+// Update time mode badge label
+function updateTimeModeLabel(){
+  const mode = document.querySelector('input[name="timeMode"]:checked')?.value || 'perModel';
+  const tag = document.getElementById('timeModeTag');
+  if (tag) tag.textContent = mode==='perModel' ? '(per model)' : '(total job)';
+}
+
+// Auto-fill base cost when printer changes
+function onPrinterChange(){
+  const v = $('printer').value; const mb = $('machineBase');
+  if (PRINTER_BASE[v]) mb.value = PRINTER_BASE[v].toFixed(2); else mb.value='';
+}
+
+function densityFor(type){
+  if (type === 'Custom') { const cd = parseFloat($('customDensity').value); return isFinite(cd)&&cd>0?cd:NaN; }
+  return DENSITIES[type] ?? NaN;
+}
+
+function calcNow(){
+  const printer = $('printer').value;
+  const base = Math.max(0, parseFloat($('machineBase').value)); // clamp >= 0
+  const type = $('filamentType').value;
+  const density = densityFor(type);
+  const dia = parseFloat($('filamentDiameter').value);
+  const priceKg = Math.max(0, parseFloat($('filamentPrice').value)); // clamp >= 0
+  const w = parseFloat($('printWeight').value);
+  const h = parseFloat($('printTimeHours').value);
+  const m = parseFloat($('printTimeMinutes').value);
+  const models = parseInt($('numModels').value,10);
+  const markupPct = Math.max(0, parseFloat($('markup').value) || 0); // prevent negative markup
+  const sellHourly = parseFloat($('sellHourly').value) || 0;
+  const enforceMin = $('enforceMin').checked;
+  const timeMode = document.querySelector('input[name="timeMode"]:checked')?.value || 'perModel';
+
+  const out = $('out');
+  const err = (msg)=>{out.style.display='block'; out.innerHTML=`<div class='warn'>${msg}</div>`; return null;};
+
+  if (!printer) return err('Select a printer.');
+  if (!isFinite(base) || base<=0) return err('Enter a valid Machine Base Cost / hr.');
+  if (!isFinite(density) || density<=0) return err('Enter a valid density (or choose a preset filament).');
+  if (!isFinite(dia) || dia<=0) return err('Enter a valid filament diameter.');
+  if (!isFinite(priceKg) || priceKg<=0) return err('Enter a valid filament price per kg.');
+  if (!isFinite(w) || w<=0) return err('Enter a valid part weight (g).');
+  if ((!isFinite(h)||h<0) || (!isFinite(m)||m<0) || (h===0 && m===0)) return err('Enter a valid print time (hours & minutes).');
+  if (!Number.isInteger(models) || models<=0) return err('Enter a valid number of models.');
+
+  // Geometry → filament length in metres (one model)
+  const radiusMM = dia/2; const areaMM2 = Math.PI*radiusMM*radiusMM; // mm^2
+  const volPerMM_cm3 = areaMM2/1000; // 1 cm^3 = 1000 mm^3
+  const gPerMM = density*volPerMM_cm3; const mmPerG = 1/gPerMM;
+  const lengthM_one = (w*mmPerG)/1000; // m for one model
+
+  // Totals & spools
+  const totalWeightG = w * models;                   // grams total for job
+  const rollsRequired = Math.ceil(totalWeightG / SPOOL_G); // 1 kg rolls
+  const leftoverG = rollsRequired*SPOOL_G - totalWeightG;   // grams leftover
+
+  // Time & base costs
+  const timeHours = h + m/60; // raw input hours
+  let hoursPerModel, jobHours;
+  if (timeMode === 'perModel') {
+    hoursPerModel = timeHours;
+    jobHours = hoursPerModel * models;
+  } else {
+    jobHours = timeHours;
+    hoursPerModel = models>0 ? (jobHours / models) : 0;
+  }
+
+  const materialCost = (w/1000) * priceKg * models;
+  const machineCost = jobHours * base; // base costs only
+  const totalCost = materialCost + machineCost;
+
+  // Initial revenue using chosen markup
+  const revenueRaw = totalCost * (1 + markupPct/100);
+
+  // Guardrails & enforcement
+  const isEng = ENGINEERING.has(type);
+  const guideMin = isEng ? 15 : 12; const guideMax = isEng ? 18 : 15; const minJob = 15;
+  const targetRate = sellHourly ? Math.max(sellHourly, guideMin) : guideMin;
+
+  let requiredRevenue = revenueRaw;
+  if (enforceMin) {
+    const needByRate = materialCost + targetRate*jobHours; // realised hourly >= targetRate
+    requiredRevenue = Math.max(revenueRaw, needByRate, minJob);
+  }
+
+  const adjusted = requiredRevenue > revenueRaw + 1e-6;
+  const pricePerModel = requiredRevenue / models;
+  const realisedHourly = jobHours ? (requiredRevenue - materialCost)/jobHours : 0;
+  const grossProfit = requiredRevenue - materialCost - machineCost;
+  const effectiveMarkupPct = totalCost>0 ? (requiredRevenue/totalCost - 1)*100 : 0;
+
+  lastCalc = { printer, base, type, density, dia, priceKg, w, h, m, models, markup:markupPct, sellHourly,
+               timeMode, hoursPerModel, jobHours, materialCost, machineCost, totalCost, revenue:requiredRevenue, pricePerModel, realisedHourly,
+               isEng, guideMin, guideMax, minJob, lengthM_one, totalWeightG, rollsRequired, leftoverG, adjusted, effectiveMarkupPct };
+
+  out.style.display='block';
+  out.innerHTML = `
+    ${adjusted?`<div class='warn'><b>Adjusted pricing:</b> Raised to meet minimums (${isEng?'Engineering/high‑temp':'Standard'} guide ${guideMin}–${guideMax}/hr and $${minJob} minimum). Effective markup now ${effectiveMarkupPct.toFixed(1)}%.</div>`:`<div class='ok'>Revenue positive</div>`}
+    <div class="kpi">
+      <div class="card"><div class="t">Printer</div><div class="v">${printer}</div></div>
+      <div class="card"><div class="t">Time mode</div><div class="v">${timeMode==='perModel'?'Per model':'Total job'}</div></div>
+      <div class="card"><div class="t">Total job filament (g)</div><div class="v">${fmt(totalWeightG)}</div></div>
+      <div class="card"><div class="t">Spools required (1 kg)</div><div class="v">${rollsRequired}</div></div>
+      <div class="card"><div class="t">Estimated leftover (g)</div><div class="v">${fmt(leftoverG)}</div></div>
+      <div class="card"><div class="t">Filament length (m) × models</div><div class="v">${fmt(lengthM_one * models)}</div></div>
+      <div class="card"><div class="t">Material cost ($)</div><div class="v">${fmt(materialCost)}</div></div>
+      <div class="card"><div class="t">Machine base cost ($)</div><div class="v">${fmt(machineCost)}</div></div>
+      <div class="card"><div class="t">Total cost pre‑markup ($)</div><div class="v">${fmt(totalCost)}</div></div>
+      <div class="card"><div class="t">Final price ($)</div><div class="v">${fmt(requiredRevenue)}</div></div>
+      <div class="card"><div class="t">Price per model ($)</div><div class="v">${fmt(pricePerModel)}</div></div>
+      <div class="card"><div class="t">Realised hourly excl. materials ($/hr)</div><div class="v">${fmt(realisedHourly)}</div></div>
+      <div class="card"><div class="t">Gross profit ($)</div><div class="v">${fmt(grossProfit)}</div></div>
+    </div>`;
+
+  return lastCalc;
+}
+
+function buildQuote(){
+  const c = lastCalc || calcNow(); if (!c) return;
+  const includeGST = $('includeGST').checked; const GST_RATE = 0.10;
+
+  // Quote meta
+  const now = new Date();
+  const y = now.getFullYear(); const mm = String(now.getMonth()+1).padStart(2,'0'); const dd = String(now.getDate()).padStart(2,'0');
+  const quoteId = `Q-${y}${mm}${dd}-${String(now.getTime()).slice(-5)}`;
+  const validDays = parseInt($('validDays').value,10) || 14;
+  const validUntil = new Date(now.getTime() + validDays*24*3600*1000);
+  const vu = `${validUntil.getFullYear()}-${String(validUntil.getMonth()+1).padStart(2,'0')}-${String(validUntil.getDate()).padStart(2,'0')}`;
+
+  const customer = $('custName').value || '';
+  const custEmail = $('custEmail').value || '';
+  const project = $('project').value || '';
+  const bizName = $('bizName').value || '3D Print Services';
+  const abn = $('abn').value || '';
+  const notes = $('notes').value || '';
+
+  // Totals (+ optional GST)
+  const subtotal = c.revenue; const gst = includeGST? subtotal*GST_RATE : 0; const grand = subtotal + gst;
+
+  const html = `
+    <div class="q-head">
+      <div class="q-brand">
+        <h2>${bizName}</h2>
+        ${abn ? `<div>ABN: ${abn}</div>`:''}
+      </div>
+      <div class="q-meta">
+        <div><strong>Quote:</strong> ${quoteId}</div>
+        <div><strong>Date:</strong> ${y}-${mm}-${dd}</div>
+        <div><strong>Valid until:</strong> ${vu}</div>
+      </div>
+    </div>
+
+    <div class="q-section">
+      <div class="q-h3">To</div>
+      <div>${customer || 'Customer'}</div>
+      ${custEmail?`<div>${custEmail}</div>`:''}
+    </div>
+
+    <div class="q-section">
+      <div class="q-h3">Project</div>
+      <div>${project || (c.type + ' print')}</div>
+    </div>
+
+    <div class="q-section">
+      <div class="q-h3">Summary</div>
+      <table class="q-table">
+        <thead>
+          <tr><th>Description</th><th>Qty</th><th>Unit</th><th>Amount ($)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>3D printing service (materials & setup included; ${c.models} model(s); material ${c.type})</td><td>1</td><td>job</td><td>${fmt(subtotal)}</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td colspan="3">Subtotal</td><td>${fmt(subtotal)}</td></tr>
+          ${includeGST?`<tr><td colspan="3">GST (10%)</td><td>${fmt(gst)}</td></tr>`:''}
+          <tr><td colspan="3">Grand Total ${includeGST?'(incl. GST)':'(ex. GST)'}</td><td>${fmt(grand)}</td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="q-section">
+      <div class="q-h3">Details</div>
+      <table class="q-table">
+        <tbody>
+          <tr><td>Models</td><td>${c.models}</td></tr>
+          <tr><td>Material type</td><td>${c.type}</td></tr>
+          <tr><td>Filament used (g)</td><td>${fmt(c.totalWeightG)}</td></tr>
+          <tr><td>Spools required (1 kg)</td><td>${c.rollsRequired} (leftover ~${fmt(c.leftoverG)} g)</td></tr>
+          <tr><td>Filament length (m)</td><td>${fmt(c.lengthM_one * c.models)}</td></tr>
+          <tr><td>Total print time (hr)</td><td>${fmt(c.jobHours)}</td></tr>
+          <tr><td>Time mode</td><td>${c.timeMode==='perModel'?'Per model':'Total job'}</td></tr>
+          <tr><td>Price per model ($)</td><td>${fmt(c.pricePerModel)}</td></tr>
+          <tr><td>Minimum job policy</td><td>$${c.minJob} minimum applies${c.revenue < c.minJob ? ' (adjusted)' : ''}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    ${notes?`<div class="q-section"><div class="q-h3">Notes / Terms</div><div class="q-notes">${notes}</div></div>`:''}
+
+    <div class="q-footer">Thank you for the opportunity. Please reply to confirm acceptance. Lead time commences after payment/material confirmation.</div>
+  `;
+
+  $('quoteWrap').innerHTML = html;
+}
+
+function printQuote(){ if (!lastCalc) buildQuote(); window.print(); }
+
+function downloadHtml(){
+  if (!lastCalc) buildQuote();
+  const docHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quote</title><style>${document.querySelector('style').innerHTML}</style></head><body>${$('quoteDoc').innerHTML}</body></html>`;
+  const blob = new Blob([docHtml], {type: 'text/html'});
+  const url = URL.createObjectURL(blob);
+  const customer = ($('custName').value||'customer').replace(/[^a-z0-9-_]+/gi,'_');
+  const a = Object.assign(document.createElement('a'), { href:url, download:`Quote_${customer}.html` });
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+function downloadPdf(){
+  const r = lastCalc || calcNow(); if (!r) return; buildQuote();
+  const qd = $('quoteDoc'); const prevDisplay = qd.style.display; const prevPos = qd.style.position; const prevLeft = qd.style.left;
+  qd.style.display='block'; qd.style.position='fixed'; qd.style.left='-10000px';
+  const el = $('quoteWrap');
+  const customer = ($('custName').value||'customer').replace(/[^a-z0-9-_]+/gi,'_');
+  try {
+    const { jsPDF } = window.jspdf || {};
+    if (!window.html2canvas || !jsPDF) throw new Error('PDF libs missing');
+    html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(canvas => {
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p','mm','a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 10;
+      const usableWidth = pageWidth - margin*2;
+      const imgWidth = usableWidth;
+      const imgHeight = canvas.height * imgWidth / canvas.width;
+      let heightLeft = imgHeight;
+      let position = margin;
+      pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
+      heightLeft -= (pageHeight - margin*2);
+      while (heightLeft > 0) {
+        pdf.addPage();
+        position = margin - (imgHeight - heightLeft);
+        pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
+        heightLeft -= (pageHeight - margin*2);
+      }
+      pdf.save(`Quote_${customer}.pdf`);
+      qd.style.display = prevDisplay; qd.style.position = prevPos; qd.style.left = prevLeft;
+    }).catch(err => { qd.style.display = prevDisplay; qd.style.position = prevPos; qd.style.left = prevLeft; alert('Could not render PDF. Use Print / Save as PDF instead.'); });
+  } catch (e){ qd.style.display = prevDisplay; qd.style.position = prevPos; qd.style.left = prevLeft; alert('PDF download not supported here. Use Print / Save as PDF.'); }
+}
+
+function copyEmail(){
+  const c = lastCalc || calcNow(); if (!c) return;
+  const name = $('custName').value || 'there';
+  const includeGST = $('includeGST').checked; const GST_RATE = 0.10;
+  const subtotal = c.revenue; const gst = includeGST? subtotal*GST_RATE : 0; const grand = subtotal + gst;
+  const txt = `Hi ${name},
+
+Here's your quote for ${$('project').value|| (c.type+' print')}:
+
+`+
+  `• 3D printing service — ${c.models} × model(s)
+`+
+  `• Material: ${c.type}
+`+
+  `• Filament used: ${fmt(c.totalWeightG)} g (${c.rollsRequired} × 1 kg spools; leftover ~${fmt(c.leftoverG)} g)
+`+
+  `• Estimated print time: ${fmt(c.jobHours)} hr
+
+`+
+  `Subtotal: $${fmt(subtotal)}
+`+
+  `${includeGST?`GST (10%): $${fmt(gst)}
+`:''}`+
+  `Total ${includeGST?'incl. GST':'ex. GST'}: $${fmt(grand)}
+
+`+
+  `Per model price: $${fmt(c.pricePerModel)}
+
+`+
+  `Valid for ${$('validDays').value||14} days.
+`+
+  `${$('notes').value?`
+Notes: ${$('notes').value}
+`:''}`+
+  `
+Thanks,
+${$('bizName').value||'—'}`;
+  navigator.clipboard.writeText(txt).then(()=>alert('Quote summary copied to clipboard.')).catch(()=>{
+    const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); alert('Quote summary copied.');
+  });
+}
+
+function resetAll(){
+  const form = document.getElementById('calcForm');
+  if (form) form.reset();
+  $('out').style.display='none';
+  $('quoteWrap').innerHTML='';
+  lastCalc=null;
+  // re-init
+  toggleCustomDensity();
+  updateTimeModeLabel();
+}
+
+// ---------- Events ----------
+window.addEventListener('DOMContentLoaded', ()=>{
+  $('printer').addEventListener('change', onPrinterChange);
+  document.querySelectorAll('input[name="timeMode"]').forEach(r=>r.addEventListener('change',updateTimeModeLabel));
+  $('btnCalc').addEventListener('click', calcNow);
+  $('btnQuote').addEventListener('click', ()=>{ const r = calcNow(); if(r) buildQuote(); });
+  $('btnPrint').addEventListener('click', ()=>{ const r = calcNow(); if(r) { buildQuote(); printQuote(); }});
+  $('btnDownloadHtml').addEventListener('click', ()=>{ const r = calcNow(); if(r) { buildQuote(); downloadHtml(); }});
+  $('btnDownloadPdf').addEventListener('click', ()=>{ const r = calcNow(); if(r) { buildQuote(); downloadPdf(); }});
+  $('btnCopyEmail').addEventListener('click', ()=>{ const r = calcNow(); if(r) copyEmail(); });
+  $('btnReset').addEventListener('click', resetAll);
+  // initialise density visibility & time badge
+  toggleCustomDensity();
+  updateTimeModeLabel();
+});
+</script>
+</body>
+</html>
