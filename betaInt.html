@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>3D Printing Cost Calculator + Quote (Refactor v3.3.0)</title>
+  <title>3D Printing Cost Calculator + Quote (Refactor v3.3.1)</title>
   <style>
     /* --- Compact UI --- */
     *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:linear-gradient(135deg,#eef2f3,#8e9eab);color:#111}
@@ -34,7 +34,7 @@
 <body>
   <div class="container no-print">
     <h1>3D Printing Cost Calculator</h1>
-    <div class="sub">Spools, tax & currency, quotes. Auto base‑cost, Bambu list. <b>v3.3.0</b></div>
+    <div class="sub">Spools, tax & currency, quotes. Auto base‑cost, Bambu list. <b>v3.3.1</b></div>
 
     <form id="calcForm" onsubmit="return false;">
       <!-- Printer -->
@@ -164,7 +164,7 @@
 
     <div id="out" class="result" style="display:none"></div>
     <div id="testOut" class="result" style="display:none"></div>
-    <div class="sub">Build v3.3.0 • refactored & shortened • load‑order safe for <code>toggleCustomDensity</code></div>
+    <div class="sub">Build v3.3.1 • fixed stray template bug in <code>calcNow()</code> • kept tests • load‑order safe for <code>toggleCustomDensity</code></div>
   </div>
 
   <div id="quoteDoc"><div class="quote-wrap" id="quoteWrap"></div></div>
@@ -200,27 +200,34 @@ const densityFor=t=>t==='Custom'?((x=parseFloat($('customDensity').value))=>isFi
 function estimateAvgWatts(pid,mat){const p=PRINTERS[pid];if(!p) return NaN;return (mat&&p.watts[mat])?p.watts[mat]:p.watts.default}
 function autoCalcBase(){const pid=$('printer').value;if(!pid) return;const watts=estimateAvgWatts(pid,$('filamentType').value),rate=parseFloat($('kwhRate').value)||0,price=parseFloat($('purchasePrice').value)||0,life=parseFloat($('lifeHours').value)||0,maint=parseFloat($('maintPerHour').value)||0,energy=(isFinite(watts)?(watts/1000)*rate:0),depr=(price>0&&life>0)?(price/life):0,base=energy+depr+Math.max(0,maint);if(base>0)$('machineBase').value=base.toFixed(2)}
 
-function calcNow(){if($('autoBase').checked) autoCalcBase();const pid=$('printer').value,base=Math.max(0,parseFloat($('machineBase').value)),type=$('filamentType').value,density=densityFor(type),dia=parseFloat($('filamentDiameter').value),priceKg=Math.max(0,parseFloat($('filamentPrice').value)),spoolSizeKG=parseFloat($('spoolSize').value)||1,billFullSpools=$('billPerSpool').checked,w=parseFloat($('printWeight').value),h=parseFloat($('printTimeHours').value),m=parseFloat($('printTimeMinutes').value),models=parseInt($('numModels').value,10),markupPct=Math.max(0,parseFloat($('markup').value)||0),sellHourly=parseFloat($('sellHourly').value)||0,enforceMin=$('enforceMin').checked,timeMode=document.querySelector('input[name="timeMode"]:checked')?.value||'perModel',outEl=$('out'),err=msg=>{outEl.style.display='block';outEl.innerHTML=`<div class='warn'>${msg}</div>`;return null};
+function calcNow(){
+  if($('autoBase').checked) autoCalcBase();
+  const pid=$('printer').value,base=Math.max(0,parseFloat($('machineBase').value)),type=$('filamentType').value,density=densityFor(type),dia=parseFloat($('filamentDiameter').value),priceKg=Math.max(0,parseFloat($('filamentPrice').value)),spoolSizeKG=parseFloat($('spoolSize').value)||1,billFullSpools=$('billPerSpool').checked,w=parseFloat($('printWeight').value),h=parseFloat($('printTimeHours').value),m=parseFloat($('printTimeMinutes').value),models=parseInt($('numModels').value,10),markupPct=Math.max(0,parseFloat($('markup').value)||0),sellHourly=parseFloat($('sellHourly').value)||0,enforceMin=$('enforceMin').checked,timeMode=document.querySelector('input[name="timeMode"]:checked')?.value||'perModel',outEl=$('out'),err=msg=>{outEl.style.display='block';outEl.innerHTML=`<div class='warn'>${msg}</div>`;return null};
   if(!pid) return err('Select a printer.'); if(!isFinite(base)||base<=0) return err('Enter a valid Machine Base Cost / hr.'); if(!isFinite(density)||density<=0) return err('Enter a valid density.'); if(!isFinite(dia)||dia<=0) return err('Enter a valid diameter.'); if(!isFinite(priceKg)||priceKg<=0) return err('Enter a valid price/kg.'); if(!isFinite(w)||w<=0) return err('Enter a valid part weight.'); if((!isFinite(h)||h<0)||(!isFinite(m)||m<0)||(h===0&&m===0)) return err('Enter a valid print time.'); if(!Number.isInteger(models)||models<=0) return err('Enter a valid number of models.');
   const radiusMM=dia/2,areaMM2=Math.PI*radiusMM*radiusMM,volPerMM_cm3=areaMM2/1000,gPerMM=density*volPerMM_cm3,mmPerG=1/gPerMM,lengthM_one=(w*mmPerG)/1000,spoolG=spoolSizeKG*1000,totalWeightG=w*models,rollsRequired=Math.ceil(totalWeightG/spoolG),leftoverG=rollsRequired*spoolG-totalWeightG,timeHours=h+m/60;let hoursPerModel,jobHours; if(timeMode==='perModel'){hoursPerModel=timeHours;jobHours=hoursPerModel*models}else{jobHours=timeHours;hoursPerModel=models?jobHours/models:0}
   const usedKg=(w/1000)*models,materialCostUsed=usedKg*priceKg,materialCostSpools=rollsRequired*spoolSizeKG*priceKg,materialCost=billFullSpools?materialCostSpools:materialCostUsed,machineCost=jobHours*base,totalCost=materialCost+machineCost,revenueRaw=totalCost*(1+markupPct/100),isEng=ENGINEERING.has(type),guideMin=isEng?15:12,guideMax=isEng?18:15,minJob=15,targetRate=sellHourly?Math.max(sellHourly,guideMin):guideMin;let revenue=Math.max(revenueRaw,minJob); if(enforceMin){revenue=Math.max(revenue,materialCost+targetRate*jobHours)} const roundedPerModel=Math.ceil(revenue/models),revenueFinal=Math.max(revenue,roundedPerModel*models),adjusted=revenueFinal>revenueRaw+1e-6,pricePerModel=roundedPerModel,realisedHourly=jobHours?(revenueFinal-materialCost)/jobHours:0,grossProfit=revenueFinal-materialCost-machineCost,effectiveMarkupPct=totalCost>0?(revenueFinal/totalCost-1)*100:0;
   lastCalc={pid,type,density,dia,priceKg,spoolSizeKG,billFullSpools,w,h,m,models,markup:markupPct,sellHourly,timeMode,hoursPerModel,jobHours,materialCost,machineCost,totalCost,revenue:revenueFinal,pricePerModel,realisedHourly,isEng,guideMin,guideMax,minJob,lengthM_one,totalWeightG,rollsRequired,leftoverG,adjusted,effectiveMarkupPct};
-  const printerName=PRINTERS[pid]?.name||pid; outEl.style.display='block'; outEl.innerHTML=`${adjusted?`<div class='warn'><b>Adjusted:</b> Raised to meet minimums (${isEng?'Engineering':'Standard'} ${guideMin}–${guideMax}/hr & ${money(minJob)} min). Effective markup ${effectiveMarkupPct.toFixed(1)}%.</div>`:`<div class='ok'>Revenue positive</div>`}
-  <div class="kpi">
-    <div class="card"><div class="t">Printer</div><div class="v">${printerName}</div></div>
-    <div class="card"><div class="t">Time mode</div><div class="v">${timeMode==='perModel'?'Per model':'Total job'}</div></div>
-    <div class="card"><div class="t">Total filament (g)</div><div class="v">${fmt(totalWeightG)}</div></div>
-    <div class="card"><div class="t">Spools (${fmt(spoolSizeKG)} kg)</div><div class="v">${rollsRequired}</div></div>
-    <div class="card"><div class="t">Leftover (g)</div><div class="v">${fmt(leftoverG)}</div></div>
-    <div class="card"><div class="t">Length (m × models)</div><div class="v">${fmt(lengthM_one*models)}</div></div>
-    <div class="card"><div class="t">Material</div><div class="v">${money(materialCost)}</div></div>
-    <div class="card"><div class="t">Machine</div><div class="v">${money(machineCost)}</div></div>
-    <div class="card"><div class="t">Total pre‑markup</div><div class="v">${money(totalCost)}</div></div>
-    <div class="card"><div class="t">Final price</div><div class="v">${money(revenueFinal)}</div></div>
-    <div class="card"><div class="t">Per model</div><div class="v">${money(pricePerModel)}</div></div>
-    <div class="card"><div class="t">Realised hourly</div><div class="v">${money(realisedHourly)}/hr</div></div>
-    <div class="card"><div class="t">Gross profit</div><div class="v">${money(grossProfit)}</div></div>
-  </div>`; return lastCalc }
+  const printerName=PRINTERS[pid]?.name||pid;
+  outEl.style.display='block';
+  outEl.innerHTML=`
+    ${adjusted?`<div class='warn'><b>Adjusted:</b> Raised to meet minimums (${isEng?'Engineering':'Standard'} ${guideMin}–${guideMax}/hr & ${money(minJob)} min). Effective markup ${effectiveMarkupPct.toFixed(1)}%.</div>`:`<div class='ok'>Revenue positive</div>`}
+    <div class="kpi">
+      <div class="card"><div class="t">Printer</div><div class="v">${printerName}</div></div>
+      <div class="card"><div class="t">Time mode</div><div class="v">${timeMode==='perModel'?'Per model':'Total job'}</div></div>
+      <div class="card"><div class="t">Total filament (g)</div><div class="v">${fmt(totalWeightG)}</div></div>
+      <div class="card"><div class="t">Spools (${fmt(spoolSizeKG)} kg)</div><div class="v">${rollsRequired}</div></div>
+      <div class="card"><div class="t">Leftover (g)</div><div class="v">${fmt(leftoverG)}</div></div>
+      <div class="card"><div class="t">Length (m × models)</div><div class="v">${fmt(lengthM_one*models)}</div></div>
+      <div class="card"><div class="t">Material</div><div class="v">${money(materialCost)}</div></div>
+      <div class="card"><div class="t">Machine</div><div class="v">${money(machineCost)}</div></div>
+      <div class="card"><div class="t">Total pre‑markup</div><div class="v">${money(totalCost)}</div></div>
+      <div class="card"><div class="t">Final price</div><div class="v">${money(revenueFinal)}</div></div>
+      <div class="card"><div class="t">Per model</div><div class="v">${money(pricePerModel)}</div></div>
+      <div class="card"><div class="t">Realised hourly</div><div class="v">${money(realisedHourly)}/hr</div></div>
+      <div class="card"><div class="t">Gross profit</div><div class="v">${money(grossProfit)}</div></div>
+    </div>`;
+  return lastCalc;
+}
 
 function buildQuote(){const taxLabel=($('taxLabel').value||'Tax').trim(),c=lastCalc||calcNow();if(!c) return;const inc=$('includeTax').checked,taxPct=Math.max(0,parseFloat($('taxRate').value)||0)/100,now=new Date(),y=now.getFullYear(),mm=String(now.getMonth()+1).padStart(2,'0'),dd=String(now.getDate()).padStart(2,'0'),id=`Q-${y}${mm}${dd}-${String(now.getTime()).slice(-5)}`,valid=parseInt($('validDays').value,10)||14,vu=new Date(now.getTime()+valid*86400000),vustr=`${vu.getFullYear()}-${String(vu.getMonth()+1).padStart(2,'0')}-${String(vu.getDate()).padStart(2,'0')}`,cust=$('custName').value||'',email=$('custEmail').value||'',project=$('project').value||'',biz=$('bizName').value||'3D Print Services',abn=$('abn').value||'',bizLbl=getBizIdLabel(),notes=$('notes').value||'',sub=c.revenue,tax=inc?sub*taxPct:0,grand=sub+tax,cur=getCurrency();
   $('quoteWrap').innerHTML=`<div class="q-head"><div class="q-brand"><h2>${biz} (${cur.code})</h2>${abn?`<div>${bizLbl}: ${abn}</div>`:''}</div><div class="q-meta"><div><b>Quote:</b> ${id}</div><div><b>Date:</b> ${y}-${mm}-${dd}</div><div><b>Valid until:</b> ${vustr}</div></div></div>
