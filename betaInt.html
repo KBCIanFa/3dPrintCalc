@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>3D Printing Cost Calculator + Quote (Refactor v3.3.0)</title>
+  <style>
+    /* --- Compact UI --- */
+    *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:linear-gradient(135deg,#eef2f3,#8e9eab);color:#111}
+    .container{width:min(92vw,980px);margin:32px auto;padding:20px;border-radius:14px;background:#fff;box-shadow:0 8px 20px rgba(0,0,0,.08)}
+    h1{margin:0 0 8px;text-align:center;color:#0b74ff}.sub{text-align:center;color:#666;margin-bottom:12px}
+    label{font-weight:600;font-size:.95rem;color:#374151;display:block;margin:8px 0 6px}
+    input,select,textarea{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;font-size:1rem}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:#0b74ff;box-shadow:0 0 0 3px rgba(11,116,255,.15)}
+    .section{margin:14px 0;padding:12px;border-left:4px solid #0b74ff;border-radius:10px;background:#f8fafc}
+    .grid{display:grid;gap:12px}.cols-2{grid-template-columns:1fr 1fr}.cols-3{grid-template-columns:repeat(3,1fr)}@media(max-width:900px){.cols-2,.cols-3{grid-template-columns:1fr}}
+    .btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px}
+    button{padding:12px;border:0;border-radius:12px;background:#0b74ff;color:#fff;font-weight:700;cursor:pointer}button:hover{background:#075ed3}
+    .secondary{background:#0ea5e9}.secondary:hover{background:#0b8ec7}.muted{background:#6b7280}.muted:hover{background:#565d65}
+    .result{margin-top:12px;padding:12px;border-radius:12px;background:#f7f9fa;box-shadow:0 4px 10px rgba(0,0,0,.06)}
+    .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-top:8px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
+    .t{font-size:.8rem;color:#6b7280}.v{font-weight:700}.warn{background:#fff4e5;border:1px solid #ffdca8;color:#8a5400;padding:8px;border-radius:8px;margin-bottom:6px}
+    .ok{background:#e8f7ef;border:1px solid #b7f0cf;color:#0a6a42;padding:8px;border-radius:8px;margin-bottom:6px}
+    /* Quote */
+    #quoteDoc{display:none}.quote-wrap{width:210mm;max-width:100%;margin:0 auto;background:#fff;color:#000;padding:22mm 18mm}
+    .q-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px}.q-brand h2{margin:0;color:#0b74ff}.q-meta{font-size:.92rem;color:#374151}
+    .q-section{margin:10px 0}.q-h3{margin:0 0 6px;color:#111}
+    table.q-table{width:100%;border-collapse:collapse;margin-top:6px}.q-table th,.q-table td{border:1px solid #e5e7eb;padding:8px;text-align:right}
+    .q-table th:first-child,.q-table td:first-child{text-align:left}.q-table tfoot td{font-weight:700}.q-notes{white-space:pre-wrap;border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fafafa}
+    @media print{body{background:#fff}.container,.no-print{display:none !important}#quoteDoc{display:block}@page{size:A4;margin:12mm}}
+    #testOut{margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9rem;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <div class="container no-print">
+    <h1>3D Printing Cost Calculator</h1>
+    <div class="sub">Spools, tax & currency, quotes. Auto base‑cost, Bambu list. <b>v3.3.0</b></div>
+
+    <form id="calcForm" onsubmit="return false;">
+      <!-- Printer -->
+      <div class="section">
+        <div class="grid cols-2">
+          <div>
+            <label for="printer">Select Printer</label>
+            <select id="printer" required>
+              <option value="">— Select —</option>
+              <option value="H2S">Bambu Lab H2S</option>
+              <option value="H2D">Bambu Lab H2D</option>
+              <option value="X1C">Bambu Lab X1 Carbon</option>
+              <option value="P1S">Bambu Lab P1S</option>
+              <option value="P1P">Bambu Lab P1P</option>
+              <option value="A1">Bambu Lab A1</option>
+              <option value="A1mini">Bambu Lab A1 mini</option>
+              <option value="Custom">Custom…</option>
+            </select>
+          </div>
+          <div>
+            <label for="machineBase">Machine Base Cost / hr</label>
+            <input id="machineBase" type="number" step="0.01" placeholder="Auto‑calc or enter"/>
+          </div>
+        </div>
+        <div class="grid cols-3" style="margin-top:6px">
+          <div><label for="kwhRate">$/kWh</label><input id="kwhRate" type="number" step="0.001" value="0.35"/></div>
+          <div><label for="purchasePrice">Purchase $</label><input id="purchasePrice" type="number" step="1" placeholder="1999"/></div>
+          <div><label for="lifeHours">Life (hrs)</label><input id="lifeHours" type="number" step="50" value="4000"/></div>
+          <div><label for="maintPerHour">Maint $/hr</label><input id="maintPerHour" type="number" step="0.01" value="0.25"/></div>
+          <label style="display:flex;gap:8px;align-items:center;margin-top:28px"><input id="autoBase" type="checkbox" checked/> Auto‑calculate base cost</label>
+        </div>
+      </div>
+
+      <!-- Filament -->
+      <div class="section">
+        <div class="grid cols-3">
+          <div>
+            <label for="filamentType">Material</label>
+            <select id="filamentType" required>
+              <option value="PLA">PLA (1.24)</option><option value="ABS">ABS (1.04)</option><option value="PETG">PETG (1.27)</option>
+              <option value="Nylon">Nylon (1.52)</option><option value="TPU">TPU (1.21)</option><option value="PC">PC (1.30)</option>
+              <option value="CarbonFiber">CF (1.30)</option><option value="ASA">ASA (1.05)</option><option value="Custom">Custom</option>
+            </select>
+          </div>
+          <div>
+            <label for="customDensity" id="customDensityLabel" style="display:none">Custom Density (g/cm³)</label>
+            <input id="customDensity" type="number" step="0.01" style="display:none" />
+          </div>
+          <div><label for="filamentDiameter">Diameter (mm)</label><input id="filamentDiameter" type="number" step="0.01" value="1.75" required /></div>
+          <div><label for="filamentPrice">Price / kg</label><input id="filamentPrice" type="number" step="0.01" required /></div>
+          <div>
+            <label for="spoolSize">Spool Size (kg)</label>
+            <select id="spoolSize"><option value="1" selected>1.00</option><option value="0.75">0.75</option><option value="0.5">0.50</option><option value="0.25">0.25</option></select>
+          </div>
+          <label style="display:flex;gap:8px;align-items:center;margin-top:28px"><input id="billPerSpool" type="checkbox"/> Charge full spools</label>
+        </div>
+      </div>
+
+      <!-- Print details -->
+      <div class="section">
+        <div class="grid cols-3">
+          <div>
+            <label>Time Input Mode</label>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <label style="display:flex;gap:6px;align-items:center"><input type="radio" name="timeMode" value="perModel" checked> Per model</label>
+              <label style="display:flex;gap:6px;align-items:center"><input type="radio" name="timeMode" value="totalJob"> Total job</label>
+            </div>
+          </div>
+          <div><label for="printWeight">Part Weight (g)</label><input id="printWeight" type="number" step="0.1" required /></div>
+          <div>
+            <label>Print Time <span id="timeModeTag" style="color:#6b7280">(per model)</span></label>
+            <div class="grid cols-2"><input id="printTimeHours" type="number" placeholder="Hours" step="1" min="0" required /><input id="printTimeMinutes" type="number" placeholder="Minutes" step="1" min="0" required /></div>
+          </div>
+          <div><label for="numModels">Number of Models</label><input id="numModels" type="number" step="1" value="1" required /></div>
+        </div>
+      </div>
+
+      <!-- Pricing -->
+      <div class="section">
+        <div class="grid cols-3">
+          <div><label for="markup">Markup (%)</label><input id="markup" type="number" step="0.1" value="0" /></div>
+          <div><label for="sellHourly">Target Sell Rate / hr</label><input id="sellHourly" type="number" step="0.1" placeholder="15" /></div>
+          <label style="display:flex;gap:8px;align-items:center;margin-top:28px"><input type="checkbox" id="enforceMin" checked/> Enforce min hourly & $15/job</label>
+        </div>
+        <div class="sub">Guide: Standard $12–15/hr • Engineering $15–18/hr.</div>
+      </div>
+
+      <!-- Quote details -->
+      <div class="section">
+        <div class="grid cols-2">
+          <div><label for="custName">Customer</label><input id="custName" type="text" placeholder="John Citizen" /></div>
+          <div><label for="custEmail">Email</label><input id="custEmail" type="email" placeholder="john@example.com" /></div>
+          <div><label for="project">Project / Item</label><input id="project" type="text" placeholder="ABS prototype" /></div>
+          <div><label for="validDays">Valid (days)</label><input id="validDays" type="number" value="14" /></div>
+        </div>
+        <div class="grid cols-2">
+          <div><label for="bizName">Business</label><input id="bizName" type="text" placeholder="Your Business" /></div>
+          <div><label for="abn" id="abnLabel">ABN</label><input id="abn" type="text" placeholder="12 345 678 901" /></div>
+        </div>
+        <div class="grid cols-2">
+          <div>
+            <label for="country">Country/Region</label>
+            <select id="country"><option value="">— None —</option><option value="AU">Australia</option><option value="NZ">New Zealand</option><option value="UK">United Kingdom</option><option value="EU">European Union</option><option value="US">United States</option><option value="CA">Canada</option></select>
+          </div>
+          <div><label for="taxLabel">Tax label</label><input id="taxLabel" type="text" placeholder="GST / VAT / Sales Tax" /></div>
+          <div>
+            <label>Tax</label>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="includeTax" type="checkbox"/><span>Include</span><input id="taxRate" type="number" step="0.1" placeholder="10" style="width:140px;margin-left:8px"/></div>
+          </div>
+        </div>
+        <label for="notes">Notes / Terms</label><textarea id="notes" placeholder="Lead times, reprint policy, delivery, payment terms, etc."></textarea>
+      </div>
+    </form>
+
+    <div class="btns">
+      <button id="btnCalc">Calculate</button>
+      <button class="secondary" id="btnQuote">Build Quote</button>
+      <button class="muted" id="btnPrint">Print / Save as PDF</button>
+      <button class="secondary" id="btnDownloadPdf">Download PDF</button>
+    </div>
+    <div class="btns" style="margin-top:6px">
+      <button id="btnDownloadHtml">Download Quote (.html)</button>
+      <button class="secondary" id="btnCopyEmail">Copy Quote (email)</button>
+      <button class="muted" id="btnReset">Reset</button>
+      <button id="btnRunTests">Run self‑tests</button>
+    </div>
+
+    <div id="out" class="result" style="display:none"></div>
+    <div id="testOut" class="result" style="display:none"></div>
+    <div class="sub">Build v3.3.0 • refactored & shortened • load‑order safe for <code>toggleCustomDensity</code></div>
+  </div>
+
+  <div id="quoteDoc"><div class="quote-wrap" id="quoteWrap"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script>
+// ==== Helpers (declared first to avoid hoist/race issues) ====
+const $=id=>document.getElementById(id), money=n=>{const {code,locale}=getCurrency();return new Intl.NumberFormat(locale,{style:'currency',currency:code,minimumFractionDigits:2,maximumFractionDigits:2}).format(n)}, fmt=n=>Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+function on(el,ev,fn){el&&el.addEventListener(ev,fn)}
+
+// toggleCustomDensity early + global
+function toggleCustomDensity(){const isC=$('filamentType').value==='Custom';$('customDensityLabel').style.display=isC?'block':'none';$('customDensity').style.display=isC?'block':'none'}
+window.toggleCustomDensity=toggleCustomDensity;
+
+// ==== Data ====
+const PRINTERS={H2S:{name:'Bambu Lab H2S',watts:{default:200,PLA:200,PETG:180,PC:330}},H2D:{name:'Bambu Lab H2D',watts:{default:210}},X1C:{name:'Bambu Lab X1 Carbon',watts:{default:130}},P1S:{name:'Bambu Lab P1S',watts:{default:130}},P1P:{name:'Bambu Lab P1P',watts:{default:130}},A1:{name:'Bambu Lab A1',watts:{default:85}},A1mini:{name:'Bambu Lab A1 mini',watts:{default:57}},Custom:{name:'Custom',watts:{default:120}}};
+const DENSITIES={PLA:1.24,ABS:1.04,PETG:1.27,Nylon:1.52,TPU:1.21,PC:1.3,CarbonFiber:1.3,ASA:1.05};
+const ENGINEERING=new Set(['ABS','ASA','Nylon','PC','CarbonFiber','PETG']);
+const COUNTRY_PRESETS={AU:{label:'GST',rate:10},NZ:{label:'GST',rate:15},UK:{label:'VAT',rate:20},EU:{label:'VAT',rate:21},US:{label:'Sales Tax',rate:0},CA:{label:'GST/HST',rate:5}};
+const CURRENCY_PRESETS={AU:{code:'AUD',locale:'en-AU'},NZ:{code:'NZD',locale:'en-NZ'},UK:{code:'GBP',locale:'en-GB'},EU:{code:'EUR',locale:'en-IE'},US:{code:'USD',locale:'en-US'},CA:{code:'CAD',locale:'en-CA'}};
+
+let lastCalc=null;
+const getCurrency=()=>{const code=$('country')?.value||'AU';return CURRENCY_PRESETS[code]||{code:'AUD',locale:'en-AU'}};
+const getBizIdLabel=()=>({AU:'ABN',NZ:'GST Number',UK:'VAT Number',EU:'VAT Number',US:'Tax ID',CA:'GST/HST Number'})[$('country')?.value||'']||'Tax/Business ID';
+
+function updateTimeModeLabel(){const mode=document.querySelector('input[name="timeMode"]:checked')?.value||'perModel';$('timeModeTag').textContent=mode==='perModel'?'(per model)':'(total job)'}
+function onPrinterChange(){if($('autoBase').checked) autoCalcBase()}
+function onCountryChange(){const code=$('country')?.value,p=COUNTRY_PRESETS[code];if(p){$('taxLabel').value=p.label;$('taxRate').value=p.rate}const lbl=document.querySelector('label[for="abn"]')||$('abnLabel');if(lbl) lbl.textContent=getBizIdLabel();if(lastCalc){calcNow();if($('quoteWrap').innerHTML.trim()) buildQuote()}}
+
+// ==== Calc pieces ====
+const densityFor=t=>t==='Custom'?((x=parseFloat($('customDensity').value))=>isFinite(x)&&x>0?x:NaN)():DENSITIES[t]??NaN;
+function estimateAvgWatts(pid,mat){const p=PRINTERS[pid];if(!p) return NaN;return (mat&&p.watts[mat])?p.watts[mat]:p.watts.default}
+function autoCalcBase(){const pid=$('printer').value;if(!pid) return;const watts=estimateAvgWatts(pid,$('filamentType').value),rate=parseFloat($('kwhRate').value)||0,price=parseFloat($('purchasePrice').value)||0,life=parseFloat($('lifeHours').value)||0,maint=parseFloat($('maintPerHour').value)||0,energy=(isFinite(watts)?(watts/1000)*rate:0),depr=(price>0&&life>0)?(price/life):0,base=energy+depr+Math.max(0,maint);if(base>0)$('machineBase').value=base.toFixed(2)}
+
+function calcNow(){if($('autoBase').checked) autoCalcBase();const pid=$('printer').value,base=Math.max(0,parseFloat($('machineBase').value)),type=$('filamentType').value,density=densityFor(type),dia=parseFloat($('filamentDiameter').value),priceKg=Math.max(0,parseFloat($('filamentPrice').value)),spoolSizeKG=parseFloat($('spoolSize').value)||1,billFullSpools=$('billPerSpool').checked,w=parseFloat($('printWeight').value),h=parseFloat($('printTimeHours').value),m=parseFloat($('printTimeMinutes').value),models=parseInt($('numModels').value,10),markupPct=Math.max(0,parseFloat($('markup').value)||0),sellHourly=parseFloat($('sellHourly').value)||0,enforceMin=$('enforceMin').checked,timeMode=document.querySelector('input[name="timeMode"]:checked')?.value||'perModel',outEl=$('out'),err=msg=>{outEl.style.display='block';outEl.innerHTML=`<div class='warn'>${msg}</div>`;return null};
+  if(!pid) return err('Select a printer.'); if(!isFinite(base)||base<=0) return err('Enter a valid Machine Base Cost / hr.'); if(!isFinite(density)||density<=0) return err('Enter a valid density.'); if(!isFinite(dia)||dia<=0) return err('Enter a valid diameter.'); if(!isFinite(priceKg)||priceKg<=0) return err('Enter a valid price/kg.'); if(!isFinite(w)||w<=0) return err('Enter a valid part weight.'); if((!isFinite(h)||h<0)||(!isFinite(m)||m<0)||(h===0&&m===0)) return err('Enter a valid print time.'); if(!Number.isInteger(models)||models<=0) return err('Enter a valid number of models.');
+  const radiusMM=dia/2,areaMM2=Math.PI*radiusMM*radiusMM,volPerMM_cm3=areaMM2/1000,gPerMM=density*volPerMM_cm3,mmPerG=1/gPerMM,lengthM_one=(w*mmPerG)/1000,spoolG=spoolSizeKG*1000,totalWeightG=w*models,rollsRequired=Math.ceil(totalWeightG/spoolG),leftoverG=rollsRequired*spoolG-totalWeightG,timeHours=h+m/60;let hoursPerModel,jobHours; if(timeMode==='perModel'){hoursPerModel=timeHours;jobHours=hoursPerModel*models}else{jobHours=timeHours;hoursPerModel=models?jobHours/models:0}
+  const usedKg=(w/1000)*models,materialCostUsed=usedKg*priceKg,materialCostSpools=rollsRequired*spoolSizeKG*priceKg,materialCost=billFullSpools?materialCostSpools:materialCostUsed,machineCost=jobHours*base,totalCost=materialCost+machineCost,revenueRaw=totalCost*(1+markupPct/100),isEng=ENGINEERING.has(type),guideMin=isEng?15:12,guideMax=isEng?18:15,minJob=15,targetRate=sellHourly?Math.max(sellHourly,guideMin):guideMin;let revenue=Math.max(revenueRaw,minJob); if(enforceMin){revenue=Math.max(revenue,materialCost+targetRate*jobHours)} const roundedPerModel=Math.ceil(revenue/models),revenueFinal=Math.max(revenue,roundedPerModel*models),adjusted=revenueFinal>revenueRaw+1e-6,pricePerModel=roundedPerModel,realisedHourly=jobHours?(revenueFinal-materialCost)/jobHours:0,grossProfit=revenueFinal-materialCost-machineCost,effectiveMarkupPct=totalCost>0?(revenueFinal/totalCost-1)*100:0;
+  lastCalc={pid,type,density,dia,priceKg,spoolSizeKG,billFullSpools,w,h,m,models,markup:markupPct,sellHourly,timeMode,hoursPerModel,jobHours,materialCost,machineCost,totalCost,revenue:revenueFinal,pricePerModel,realisedHourly,isEng,guideMin,guideMax,minJob,lengthM_one,totalWeightG,rollsRequired,leftoverG,adjusted,effectiveMarkupPct};
+  const printerName=PRINTERS[pid]?.name||pid; outEl.style.display='block'; outEl.innerHTML=`${adjusted?`<div class='warn'><b>Adjusted:</b> Raised to meet minimums (${isEng?'Engineering':'Standard'} ${guideMin}–${guideMax}/hr & ${money(minJob)} min). Effective markup ${effectiveMarkupPct.toFixed(1)}%.</div>`:`<div class='ok'>Revenue positive</div>`}
+  <div class="kpi">
+    <div class="card"><div class="t">Printer</div><div class="v">${printerName}</div></div>
+    <div class="card"><div class="t">Time mode</div><div class="v">${timeMode==='perModel'?'Per model':'Total job'}</div></div>
+    <div class="card"><div class="t">Total filament (g)</div><div class="v">${fmt(totalWeightG)}</div></div>
+    <div class="card"><div class="t">Spools (${fmt(spoolSizeKG)} kg)</div><div class="v">${rollsRequired}</div></div>
+    <div class="card"><div class="t">Leftover (g)</div><div class="v">${fmt(leftoverG)}</div></div>
+    <div class="card"><div class="t">Length (m × models)</div><div class="v">${fmt(lengthM_one*models)}</div></div>
+    <div class="card"><div class="t">Material</div><div class="v">${money(materialCost)}</div></div>
+    <div class="card"><div class="t">Machine</div><div class="v">${money(machineCost)}</div></div>
+    <div class="card"><div class="t">Total pre‑markup</div><div class="v">${money(totalCost)}</div></div>
+    <div class="card"><div class="t">Final price</div><div class="v">${money(revenueFinal)}</div></div>
+    <div class="card"><div class="t">Per model</div><div class="v">${money(pricePerModel)}</div></div>
+    <div class="card"><div class="t">Realised hourly</div><div class="v">${money(realisedHourly)}/hr</div></div>
+    <div class="card"><div class="t">Gross profit</div><div class="v">${money(grossProfit)}</div></div>
+  </div>`; return lastCalc }
+
+function buildQuote(){const taxLabel=($('taxLabel').value||'Tax').trim(),c=lastCalc||calcNow();if(!c) return;const inc=$('includeTax').checked,taxPct=Math.max(0,parseFloat($('taxRate').value)||0)/100,now=new Date(),y=now.getFullYear(),mm=String(now.getMonth()+1).padStart(2,'0'),dd=String(now.getDate()).padStart(2,'0'),id=`Q-${y}${mm}${dd}-${String(now.getTime()).slice(-5)}`,valid=parseInt($('validDays').value,10)||14,vu=new Date(now.getTime()+valid*86400000),vustr=`${vu.getFullYear()}-${String(vu.getMonth()+1).padStart(2,'0')}-${String(vu.getDate()).padStart(2,'0')}`,cust=$('custName').value||'',email=$('custEmail').value||'',project=$('project').value||'',biz=$('bizName').value||'3D Print Services',abn=$('abn').value||'',bizLbl=getBizIdLabel(),notes=$('notes').value||'',sub=c.revenue,tax=inc?sub*taxPct:0,grand=sub+tax,cur=getCurrency();
+  $('quoteWrap').innerHTML=`<div class="q-head"><div class="q-brand"><h2>${biz} (${cur.code})</h2>${abn?`<div>${bizLbl}: ${abn}</div>`:''}</div><div class="q-meta"><div><b>Quote:</b> ${id}</div><div><b>Date:</b> ${y}-${mm}-${dd}</div><div><b>Valid until:</b> ${vustr}</div></div></div>
+  <div class="q-section"><div class="q-h3">To</div><div>${cust||'Customer'}</div>${email?`<div>${email}</div>`:''}</div>
+  <div class="q-section"><div class="q-h3">Project</div><div>${project|| (c.type+' print')}</div></div>
+  <div class="q-section"><div class="q-h3">Summary</div><table class="q-table"><thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Amount (${cur.code})</th></tr></thead><tbody><tr><td>3D printing service (materials & setup included; ${c.models} model(s); material ${c.type})</td><td>1</td><td>job</td><td>${money(sub)}</td></tr></tbody><tfoot><tr><td colspan="3">Subtotal</td><td>${money(sub)}</td></tr>${inc?`<tr><td colspan="3">${taxLabel} (${fmt(taxPct*100)}%)</td><td>${money(tax)}</td></tr>`:''}<tr><td colspan="3">Grand Total ${inc?`(incl. ${taxLabel})`:`(ex. ${taxLabel})`}</td><td>${money(grand)}</td></tr></tfoot></table></div>
+  <div class="q-section"><div class="q-h3">Details</div><table class="q-table"><tbody>
+    <tr><td>Models</td><td>${c.models}</td></tr>
+    <tr><td>Material type</td><td>${c.type}</td></tr>
+    <tr><td>Filament used (g)</td><td>${fmt(c.totalWeightG)}</td></tr>
+    <tr><td>Spools required (${fmt(c.spoolSizeKG)} kg)</td><td>${c.rollsRequired} (leftover ~${fmt(c.leftoverG)} g)</td></tr>
+    <tr><td>Filament length (m)</td><td>${fmt(c.lengthM_one*c.models)}</td></tr>
+    <tr><td>Total print time (hr)</td><td>${fmt(c.jobHours)}</td></tr>
+    <tr><td>Time mode</td><td>${c.timeMode==='perModel'?'Per model':'Total job'}</td></tr>
+    <tr><td>Price per model</td><td>${money(c.pricePerModel)}</td></tr>
+    <tr><td>Minimum job policy</td><td>${money(c.minJob)} minimum applies${c.revenue<c.minJob?' (adjusted)':''}</td></tr>
+  </tbody></table></div>${notes?`<div class="q-section"><div class="q-h3">Notes / Terms</div><div class="q-notes">${notes}</div></div>`:''}`}
+
+function printQuote(){if(!lastCalc) buildQuote();window.print()}
+function downloadHtml(){if(!lastCalc) buildQuote();const docHtml=`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quote</title><style>${document.querySelector('style').innerHTML}</style></head><body>${$('quoteDoc').innerHTML}</body></html>`,blob=new Blob([docHtml],{type:'text/html'}),url=URL.createObjectURL(blob),customer=($('custName').value||'customer').replace(/[^a-z0-9-_]+/gi,'_'),a=Object.assign(document.createElement('a'),{href:url,download:`Quote_${customer}.html`});document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url)}
+function downloadPdf(){const r=lastCalc||calcNow();if(!r) return;buildQuote();const qd=$('quoteDoc'),pd=qd.style.display,pp=qd.style.position,pl=qd.style.left;qd.style.display='block';qd.style.position='fixed';qd.style.left='-10000px';const el=$('quoteWrap'),customer=($('custName').value||'customer').replace(/[^a-z0-9-_]+/gi,'_');try{const {jsPDF}=window.jspdf||{};if(!window.html2canvas||!jsPDF) throw new Error('PDF libs missing');html2canvas(el,{scale:2,useCORS:true,backgroundColor:'#fff'}).then(canvas=>{const img=canvas.toDataURL('image/png'),pdf=new jsPDF('p','mm','a4'),pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight(),m=10,w=pw-m*2,h=canvas.height*w/canvas.width;let left=h-(ph-m*2),pos=m;pdf.addImage(img,'PNG',m,pos,w,h);while(left>0){pdf.addPage();pos=m-(h-left);pdf.addImage(img,'PNG',m,pos,w,h);left-= (ph-m*2)}pdf.save(`Quote_${customer}.pdf`);qd.style.display=pd;qd.style.position=pp;qd.style.left=pl}).catch(()=>{qd.style.display=pd;qd.style.position=pp;qd.style.left=pl;alert('Could not render PDF. Use Print / Save as PDF instead.')})}catch(e){qd.style.display=pd;qd.style.position=pp;qd.style.left=pl;alert('PDF download not supported here. Use Print / Save as PDF.')}}
+function copyEmail(){const taxLabel=($('taxLabel').value||'Tax').trim(),c=lastCalc||calcNow();if(!c) return;const name=$('custName').value||'there',inc=$('includeTax').checked,taxPct=Math.max(0,parseFloat($('taxRate').value)||0)/100,sub=c.revenue,tax=inc?sub*taxPct:0,grand=sub+tax,txt=`Hi ${name},\n\nHere's your quote for ${$('project').value||(c.type+' print')}:\n\n• 3D printing service — ${c.models} × model(s)\n• Material: ${c.type}\n• Filament used: ${fmt(c.totalWeightG)} g (${c.rollsRequired} × ${fmt(c.spoolSizeKG)} kg spools; leftover ~${fmt(c.leftoverG)} g)\n• Estimated print time: ${fmt(c.jobHours)} hr\n\nSubtotal: ${money(sub)}\n${inc?`${taxLabel} (${fmt(taxPct*100)}%): ${money(tax)}\n`:''}Total ${inc?`incl. ${taxLabel}`:`ex. ${taxLabel}`}: ${money(grand)}\n\nPer model price: ${money(c.pricePerModel)}\n\nValid for ${$('validDays').value||14} days.\n${$('notes').value?`\nNotes: ${$('notes').value}\n`:''}Thanks,\n${$('bizName').value||'—'}`;navigator.clipboard.writeText(txt).then(()=>alert('Quote summary copied.')).catch(()=>{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();alert('Quote summary copied.')})}
+function resetAll(){const f=$('calcForm');if(f) f.reset();$('out').style.display='none';$('quoteWrap').innerHTML='';$('testOut').style.display='none';lastCalc=null;toggleCustomDensity();updateTimeModeLabel();onPrinterChange()}
+
+// ==== Self‑tests (unchanged intent) ====
+function assert(c,m){return {pass:!!c,msg:m}};function runTests(){const r=[];r.push(assert(typeof window.toggleCustomDensity==='function','toggleCustomDensity is defined globally'));$('filamentType').value='Custom';toggleCustomDensity();r.push(assert($("customDensity").style.display==='block','Custom density shows when material=Custom'));$('filamentType').value='PLA';toggleCustomDensity();r.push(assert($("customDensity").style.display==='none','Custom density hides when material!=Custom'));$('printer').value='H2S';onPrinterChange();$('filamentType').value='PLA';$('filamentDiameter').value='1.75';$('filamentPrice').value='25';$('spoolSize').value='1';$('printWeight').value='50';$('printTimeHours').value='0';$('printTimeMinutes').value='30';$('numModels').value='2';$('markup').value='0';$('sellHourly').value='0';$('enforceMin').checked=true;$('purchasePrice').value='1999';$('lifeHours').value='4000';$('kwhRate').value='0.35';$('maintPerHour').value='0.25';$('autoBase').checked=true;let s=calcNow();r.push(assert(!!s,'calcNow returns snapshot'));try{calcNow();r.push(assert(true,'calcNow can run twice'))}catch(e){r.push(assert(false,'calcNow threw: '+e.message))}r.push(assert(s.pricePerModel>=Math.ceil(15/s.models),'per‑model rounded to ensure >= $15/job'));document.querySelector('input[name="timeMode"][value="totalJob"]').checked=true;updateTimeModeLabel();$('printTimeHours').value='1';$('printTimeMinutes').value='0';s=calcNow();r.push(assert(s.timeMode==='totalJob','time mode switches to total job'));$('country').value='UK';onCountryChange();r.push(assert($('taxLabel').value==='VAT'&&Number($('taxRate').value)===20,'UK VAT 20% preset'));$('country').value='NZ';onCountryChange();buildQuote();r.push(assert($('quoteWrap').innerHTML.includes('(NZD)'),'Quote shows NZD after country change'));$('billPerSpool').checked=true;$('spoolSize').value='0.25';$('printWeight').value='300';$('numModels').value='1';s=calcNow();r.push(assert(s.rollsRequired>=2,'spool rounding works'));$('printer').value='H2S';$('filamentType').value='PLA';$('autoBase').checked=true;onPrinterChange();const basePLA=parseFloat($('machineBase').value)||0;$('filamentType').value='PC';onPrinterChange();const basePC=parseFloat($('machineBase').value)||0;r.push(assert(basePC>basePLA,'Auto base/hr increases PLA→PC on H2S'));const pass=r.filter(x=>x.pass).length,fail=r.length-pass;$('testOut').style.display='block';$('testOut').textContent=`Self‑tests: ${pass}/${r.length} passed${fail?` (failures: ${fail})`:''}\n`+r.map((x,i)=>`${x.pass?'✅':'❌'} Test ${i+1}: ${x.msg}`).join('\n')}
+
+// ==== Events ====
+window.addEventListener('DOMContentLoaded',()=>{
+  on($('printer'),'change',onPrinterChange);
+  on($('filamentType'),'change',toggleCustomDensity);
+  document.querySelectorAll('input[name="timeMode"]').forEach(r=>on(r,'change',updateTimeModeLabel));
+  on($('btnCalc'),'click',calcNow); on($('btnQuote'),'click',()=>{const r=calcNow();if(r) buildQuote()});
+  on($('btnPrint'),'click',()=>{const r=calcNow(); if(r){buildQuote();printQuote();}});
+  on($('btnDownloadHtml'),'click',()=>{const r=calcNow();if(r){buildQuote();downloadHtml();}});
+  on($('btnDownloadPdf'),'click',()=>{const r=calcNow();if(r){buildQuote();downloadPdf();}});
+  on($('btnCopyEmail'),'click',()=>{const r=calcNow();if(r) copyEmail()});
+  on($('btnReset'),'click',resetAll); on($('btnRunTests'),'click',runTests);
+  on($('country'),'change',onCountryChange); on($('kwhRate'),'input',()=>{$('autoBase').checked&&autoCalcBase()});
+  ['purchasePrice','lifeHours','maintPerHour','autoBase'].forEach(id=>on($(id),'input',()=>{$('autoBase').checked&&autoCalcBase()}));
+  toggleCustomDensity(); updateTimeModeLabel(); onPrinterChange(); $('autoBase').checked&&autoCalcBase();
+});
+</script>
+</body>
+</html>
